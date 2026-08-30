@@ -1,49 +1,57 @@
 package task2_intelligent_resource_allocation.algorithm;
 
-import org.springframework.stereotype.Component;
 import java.util.Arrays;
 
-@Component
 public class HungarianAlgorithm {
-    public int[] solve(double[][] costMatrix) {
-        int n = costMatrix.length;
-        double[] u = new double[n + 1];
-        double[] v = new double[n + 1];
-        int[] p = new int[n + 1];
-        int[] way = new int[n + 1];
+
+    public static int[] findOptimalAssignments(double[][] costMatrix) {
+        int rows = costMatrix.length;
+        int cols = costMatrix[0].length;
+        int n = Math.max(rows, cols);
+        double[][] matrix = new double[n][n];
+
+        for (int i = 0; i < n; i++) {
+            Arrays.fill(matrix[i], 1e9);
+            if (i < rows) {
+                System.arraycopy(costMatrix[i], 0, matrix[i], 0, cols);
+            }
+        }
+
+        double[] u = new double[n + 1], v = new double[n + 1];
+        int[] p = new int[n + 1], way = new int[n + 1];
 
         for (int i = 1; i <= n; i++) {
             p[0] = i;
             int j0 = 0;
-            double[] minV = new double[n + 1];
-            Arrays.fill(minV, Double.MAX_VALUE);
-            boolean[] used = new boolean[n + 1];
+            double[] minv = new double[n + 1];
+            Arrays.fill(minv, Double.MAX_VALUE);
+            boolean[] flagged = new boolean[n + 1];
 
             do {
-                used[j0] = true;
+                flagged[j0] = true;
                 int i0 = p[j0], j1 = 0;
                 double delta = Double.MAX_VALUE;
 
                 for (int j = 1; j <= n; j++) {
-                    if (!used[j]) {
-                        double cur = costMatrix[i0 - 1][j - 1] - u[i0] - v[j];
-                        if (cur < minV[j]) {
-                            minV[j] = cur;
+                    if (!flagged[j]) {
+                        double cur = matrix[i0 - 1][j - 1] - u[i0] - v[j];
+                        if (cur < minv[j]) {
+                            minv[j] = cur;
                             way[j] = j0;
                         }
-                        if (minV[j] < delta) {
-                            delta = minV[j];
+                        if (minv[j] < delta) {
+                            delta = minv[j];
                             j1 = j;
                         }
                     }
                 }
 
                 for (int j = 0; j <= n; j++) {
-                    if (used[j]) {
+                    if (flagged[j]) {
                         u[p[j]] += delta;
                         v[j] -= delta;
                     } else {
-                        minV[j] -= delta;
+                        minv[j] -= delta;
                     }
                 }
                 j0 = j1;
@@ -56,10 +64,15 @@ public class HungarianAlgorithm {
             } while (j0 != 0);
         }
 
-        int[] assignment = new int[n];
-        for (int j = 1; j <= n; j++) {
-            assignment[p[j] - 1] = j - 1;
+        int[] result = new int[rows];
+        for (int i = 0; i < rows; i++) {
+            result[i] = -1;
+            for (int j = 0; j < cols; j++) {
+                if (p[j + 1] == i + 1) {
+                    result[i] = j;
+                }
+            }
         }
-        return assignment;
+        return result;
     }
 }
