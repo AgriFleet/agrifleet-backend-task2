@@ -39,4 +39,9 @@ public class AllocationController {
     public ResponseEntity<List<AllocatedAssignmentEntity>> getAssignments(@RequestParam Long batchId) {
         return ResponseEntity.ok(allocationService.getAssignmentsByBatchId(batchId));
     }
+    @PutMapping("/assignments/{id}/confirm")
+    public ResponseEntity<Void> confirmAssignment(@PathVariable Long id) {
+        allocationService.confirmAssignment(id);
+        return ResponseEntity.ok().build();
+    }
 }
