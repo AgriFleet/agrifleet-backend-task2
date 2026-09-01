@@ -8,11 +8,11 @@ Within the 5-module AgriFleet ecosystem, **Task 2: Resource Allocation Service**
 
 ```text
 +------------------------------------------------------------------------------------------------------+
-|                     AGRIFLEET CENTRAL GUI / API GATEWAY                                              |
+|                                   AGRIFLEET CENTRAL GUI / API GATEWAY                                |
 +---------+------------------+----------------------+-------------------+--------------------+---------+
           |                  |                      |                   |                    | 
           v                  v                      v                   v                    v
-+------------------+ +------------------+ +------------------+ +------------------+ +------------------+
++------------------+ +------------------+ +------------------+ +------------------+ +------------------+           
 |     TASK 1       | |     TASK 2       | |     TASK 3       | |     TASK 4       | |     TASK 5       |
 | Route            | | Resource         | | Network          | | Intelligent      | | Multi-Job Tour   |
 | Optimization     | | Allocation       | | Analysis         | | Decision (MCDM)  | | Optimization     |
