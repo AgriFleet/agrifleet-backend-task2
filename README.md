@@ -15,8 +15,8 @@ Within the 5-module AgriFleet ecosystem, **Task 2: Resource Allocation Service**
 +------------------+ +------------------+ +------------------+ +------------------+
 |     TASK 1       | |     TASK 2       | |     TASK 3       | |     TASK 4       |
 | Route            | | Resource         | | Network          | | Intelligent      |
-| Optimization     | | Allocation       | | Analysis         | | Decision (MCDM) |
-| (A* / Dijkstra)  | | (Hungarian)      | | (Tarjan / MST)   | | (TOPSIS)        |
+| Optimization     | | Allocation       | | Analysis         | | Decision (MCDM)  |
+| (A* / Dijkstra)  | | (Hungarian)      | | (Tarjan / MST)   | | (TOPSIS)         |
 +------------------+ +------------------+ +------------------+ +------------------+
                            |
                            v
