@@ -7,72 +7,130 @@ import task2_intelligent_resource_allocation.entity.AllocationBatchEntity;
 import task2_intelligent_resource_allocation.repository.AllocatedAssignmentRepository;
 import task2_intelligent_resource_allocation.repository.AllocationBatchRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class AllocationService {
 
     private final AllocationBatchRepository batchRepository;
     private final AllocatedAssignmentRepository assignmentRepository;
+    private final RestTemplate restTemplate;
 
-    public AllocationService(AllocationBatchRepository batchRepository, AllocatedAssignmentRepository assignmentRepository) {
+    // Core Service URL on Port 8080
+    private final String CORE_SERVICE_URL = "http://localhost:8080/api/v1";
+
+    public AllocationService(AllocationBatchRepository batchRepository,
+                             AllocatedAssignmentRepository assignmentRepository) {
         this.batchRepository = batchRepository;
         this.assignmentRepository = assignmentRepository;
+        this.restTemplate = new RestTemplate();
     }
 
+    @Transactional
     public AllocationBatchEntity executeHungarianBatch() {
         long startTime = System.nanoTime();
 
-        long[] vehicleIds = {1, 2, 3, 8};
-        long[] bookingIds = {1, 2, 3, 4};
+        // 1. Fetch live data from Core Service (Port 8080)
+        List<VehicleDTO> vehicles = fetchAvailableVehicles();
+        List<BookingDTO> bookings = fetchPendingBookings();
 
-        double[][] costMatrix = {
-                {5.85, 7.60, 6.20, 9.40},
-                {4.90, 4.20, 8.10, 8.50},
-                {9.10, 11.20, 5.80, 4.30},
-                {3.40, 6.10, 12.00, 7.80}
-        };
+        int numVehicles = vehicles.size();
+        int numBookings = bookings.size();
 
+        if (numVehicles == 0 || numBookings == 0) {
+            throw new RuntimeException("Cannot run batch: Need at least 1 AVAILABLE vehicle and 1 PENDING booking in the database.");
+        }
+
+        int n = Math.max(numVehicles, numBookings);
+
+        // 2. Build Cost Matrix dynamically using Haversine GPS distances
+        double[][] costMatrix = new double[n][n];
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                if (i < numVehicles && j < numBookings) {
+                    costMatrix[i][j] = calculateHaversineDistance(
+                            vehicles.get(i).getCurrentLat(), vehicles.get(i).getCurrentLng(),
+                            bookings.get(j).getFarmLat(), bookings.get(j).getFarmLng()
+                    );
+                } else {
+                    costMatrix[i][j] = 99999.0; // Padding for unbalanced matrices
+                }
+            }
+        }
+
+        // 3. Execute Hungarian Algorithm
         int[] assignments = HungarianAlgorithm.findOptimalAssignments(costMatrix);
 
         long endTime = System.nanoTime();
         double execTimeMs = (endTime - startTime) / 1_000_000.0;
 
+        // 4. Calculate total network cost
         double totalCost = 0.0;
         for (int i = 0; i < assignments.length; i++) {
-            totalCost += costMatrix[i][assignments[i]];
+            int assignedBookingIdx = assignments[i];
+            if (i < numVehicles && assignedBookingIdx < numBookings) {
+                totalCost += costMatrix[i][assignedBookingIdx];
+            }
         }
 
+        // 5. Save Batch History
         AllocationBatchEntity batch = new AllocationBatchEntity();
         batch.setBatchType("SCHEDULED_BATCH");
-        batch.setMatrixDimensions(vehicleIds.length + "x" + bookingIds.length);
+        batch.setMatrixDimensions(numVehicles + "x" + numBookings);
         batch.setCostMatrixPayload(Arrays.deepToString(costMatrix));
-        batch.setCandidateVehicleIds(Arrays.toString(vehicleIds));
-        batch.setCandidateBookingIds(Arrays.toString(bookingIds));
-        batch.setTotalNetworkCost(totalCost);
+
+        long[] vIds = vehicles.stream().mapToLong(VehicleDTO::getVehicleId).toArray();
+        long[] bIds = bookings.stream().mapToLong(BookingDTO::getBookingId).toArray();
+        batch.setCandidateVehicleIds(Arrays.toString(vIds));
+        batch.setCandidateBookingIds(Arrays.toString(bIds));
+
+        batch.setTotalNetworkCost(Math.round(totalCost * 100.0) / 100.0);
         batch.setExecutionTimeMs(Math.round(execTimeMs * 100.0) / 100.0);
         batch = batchRepository.save(batch);
 
+        // 6. Save Individual Assignments
         for (int i = 0; i < assignments.length; i++) {
-            AllocatedAssignmentEntity assignment = new AllocatedAssignmentEntity();
-            assignment.setBatchId(batch.getBatchId());
-            assignment.setVehicleId(vehicleIds[i]);
-            assignment.setBookingId(bookingIds[assignments[i]]);
-            assignment.setDeadheadDistanceKm(costMatrix[i][assignments[i]]);
-            assignment.setEstimatedEta("2026-08-25 08:00:00");
-            assignmentRepository.save(assignment);
+            int assignedBookingIdx = assignments[i];
+            if (i < numVehicles && assignedBookingIdx < numBookings) {
+                AllocatedAssignmentEntity assignment = new AllocatedAssignmentEntity();
+                assignment.setBatchId(batch.getBatchId());
+                assignment.setVehicleId(vehicles.get(i).getVehicleId());
+                assignment.setBookingId(bookings.get(assignedBookingIdx).getBookingId());
+                assignment.setDeadheadDistanceKm(Math.round(costMatrix[i][assignedBookingIdx] * 100.0) / 100.0);
+                assignment.setEstimatedEta("PENDING");
+                assignmentRepository.save(assignment);
+            }
         }
 
         return batch;
     }
 
+    @Transactional
     public AllocationBatchEntity executeGreedyRealtime(Long bookingId) {
         long startTime = System.nanoTime();
 
-        long[] vehicleIds = {4, 5, 6, 7};
-        double[] distances = {3.10, 8.40, 5.20, 11.00};
+        BookingDTO targetBooking = fetchBookingById(bookingId);
+        List<VehicleDTO> vehicles = fetchAvailableVehicles();
+        if (vehicles.isEmpty()) {
+            throw new RuntimeException("No available vehicles to dispatch!");
+        }
+
+        long[] vehicleIds = new long[vehicles.size()];
+        double[] distances = new double[vehicles.size()];
+
+        for (int i = 0; i < vehicles.size(); i++) {
+            VehicleDTO v = vehicles.get(i);
+            vehicleIds[i] = v.getVehicleId();
+            distances[i] = calculateHaversineDistance(
+                    v.getCurrentLat(), v.getCurrentLng(),
+                    targetBooking.getFarmLat(), targetBooking.getFarmLng()
+            );
+        }
 
         GreedyAllocator.CandidateVehicle bestCandidate = GreedyAllocator.findBestVehicle(vehicleIds, distances);
 
@@ -81,11 +139,11 @@ public class AllocationService {
 
         AllocationBatchEntity batch = new AllocationBatchEntity();
         batch.setBatchType("REALTIME_GREEDY");
-        batch.setMatrixDimensions("1x" + vehicleIds.length);
-        batch.setCostMatrixPayload("[[" + bestCandidate.transitCostKm + "]]");
+        batch.setMatrixDimensions("1x" + vehicles.size());
+        batch.setCostMatrixPayload("[[" + Math.round(bestCandidate.transitCostKm * 100.0) / 100.0 + "]]");
         batch.setCandidateVehicleIds(Arrays.toString(vehicleIds));
         batch.setCandidateBookingIds("[" + bookingId + "]");
-        batch.setTotalNetworkCost(bestCandidate.transitCostKm);
+        batch.setTotalNetworkCost(Math.round(bestCandidate.transitCostKm * 100.0) / 100.0);
         batch.setExecutionTimeMs(Math.round(execTimeMs * 100.0) / 100.0);
         batch = batchRepository.save(batch);
 
@@ -93,7 +151,7 @@ public class AllocationService {
         assignment.setBatchId(batch.getBatchId());
         assignment.setVehicleId(bestCandidate.vehicleId);
         assignment.setBookingId(bookingId);
-        assignment.setDeadheadDistanceKm(bestCandidate.transitCostKm);
+        assignment.setDeadheadDistanceKm(Math.round(bestCandidate.transitCostKm * 100.0) / 100.0);
         assignment.setEstimatedEta("ASAP");
         assignmentRepository.save(assignment);
 
@@ -104,8 +162,80 @@ public class AllocationService {
         return batchRepository.findAllByOrderByBatchIdDesc();
     }
 
-    // THIS IS THE MISSING METHOD FOR THE VISUALIZER
     public List<AllocatedAssignmentEntity> getAssignmentsByBatchId(Long batchId) {
         return assignmentRepository.findByBatchId(batchId);
+    }
+
+    public void confirmAssignment(Long assignmentId) {
+        AllocatedAssignmentEntity assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new RuntimeException("Assignment not found: " + assignmentId));
+
+        assignment.setAssignmentStatus("DISPATCHED");
+        assignmentRepository.save(assignment);
+    }
+
+    private List<VehicleDTO> fetchAvailableVehicles() {
+        VehicleDTO[] allVehicles = restTemplate.getForObject(CORE_SERVICE_URL + "/vehicles", VehicleDTO[].class);
+        return Arrays.stream(allVehicles != null ? allVehicles : new VehicleDTO[0])
+                .filter(v -> "AVAILABLE".equalsIgnoreCase(v.getAvailabilityStatus()))
+                .collect(Collectors.toList());
+    }
+
+    private List<BookingDTO> fetchPendingBookings() {
+        BookingDTO[] allBookings = restTemplate.getForObject(CORE_SERVICE_URL + "/bookings", BookingDTO[].class);
+        return Arrays.stream(allBookings != null ? allBookings : new BookingDTO[0])
+                .filter(b -> "PENDING".equalsIgnoreCase(b.getBookingStatus()))
+                .collect(Collectors.toList());
+    }
+
+    private BookingDTO fetchBookingById(Long id) {
+        BookingDTO booking = restTemplate.getForObject(CORE_SERVICE_URL + "/bookings/" + id, BookingDTO.class);
+        if (booking == null) {
+            throw new RuntimeException("Booking not found on Core Service: " + id);
+        }
+        return booking;
+    }
+
+    public static class VehicleDTO {
+        private Long vehicleId;
+        private Double currentLat;
+        private Double currentLng;
+        private String availabilityStatus;
+
+        public Long getVehicleId() { return vehicleId; }
+        public void setVehicleId(Long vehicleId) { this.vehicleId = vehicleId; }
+        public Double getCurrentLat() { return currentLat; }
+        public void setCurrentLat(Double currentLat) { this.currentLat = currentLat; }
+        public Double getCurrentLng() { return currentLng; }
+        public void setCurrentLng(Double currentLng) { this.currentLng = currentLng; }
+        public String getAvailabilityStatus() { return availabilityStatus; }
+        public void setAvailabilityStatus(String availabilityStatus) { this.availabilityStatus = availabilityStatus; }
+    }
+
+    public static class BookingDTO {
+        private Long bookingId;
+        private Double farmLat;
+        private Double farmLng;
+        private String bookingStatus;
+
+        public Long getBookingId() { return bookingId; }
+        public void setBookingId(Long bookingId) { this.bookingId = bookingId; }
+        public Double getFarmLat() { return farmLat; }
+        public void setFarmLat(Double farmLat) { this.farmLat = farmLat; }
+        public Double getFarmLng() { return farmLng; }
+        public void setFarmLng(Double farmLng) { this.farmLng = farmLng; }
+        public String getBookingStatus() { return bookingStatus; }
+        public void setBookingStatus(String bookingStatus) { this.bookingStatus = bookingStatus; }
+    }
+
+    private double calculateHaversineDistance(double lat1, double lon1, double lat2, double lon2) {
+        final int R = 6371;
+        double latDistance = Math.toRadians(lat2 - lat1);
+        double lonDistance = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
     }
 }
