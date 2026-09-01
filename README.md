@@ -7,17 +7,17 @@
 Within the 5-module AgriFleet ecosystem, **Task 2: Resource Allocation Service** provides the optimal asset-matching layer. When farmers submit harvester and machinery booking requests, Task 2 matches available agricultural machinery to pending farm plots while minimizing total network travel costs and deadhead distances.
 
 ```text
-+-----------------------------------------------------------------------------------+
-|                     AGRIFLEET CENTRAL GUI / API GATEWAY                           |
-+---------+------------------+------------------+------------------+----------------+
-          |                  |                  |                  |
-          v                  v                  v                  v
-+------------------+ +------------------+ +------------------+ +------------------+
-|     TASK 1       | |     TASK 2       | |     TASK 3       | |     TASK 4       |
-| Route            | | Resource         | | Network          | | Intelligent      |
-| Optimization     | | Allocation       | | Analysis         | | Decision (MCDM)  |
-| (A* / Dijkstra)  | | (Hungarian)      | | (Tarjan / MST)   | | (TOPSIS)         |
-+------------------+ +------------------+ +------------------+ +------------------+
++------------------------------------------------------------------------------------------------------+
+|                     AGRIFLEET CENTRAL GUI / API GATEWAY                                              |
++---------+------------------+----------------------+-------------------+--------------------+---------+
+          |                  |                      |                   |                    | 
+          v                  v                      v                   v                    v
++------------------+ +------------------+ +------------------+ +------------------+ +------------------+
+|     TASK 1       | |     TASK 2       | |     TASK 3       | |     TASK 4       | |     TASK 5       |
+| Route            | | Resource         | | Network          | | Intelligent      | | Multi-Job Tour   |
+| Optimization     | | Allocation       | | Analysis         | | Decision (MCDM)  | | Optimization     |
+| (A* / Dijkstra)  | | (Hungarian)      | | (Tarjan / MST)   | | (TOPSIS)         | |                  |
++------------------+ +------------------+ +------------------+ +------------------+ +------------------+
                            |
                            v
                   +-----------------------+
