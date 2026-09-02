@@ -34,7 +34,6 @@ public class AllocationController {
         return ResponseEntity.ok(allocationService.getAllBatches());
     }
 
-    // THIS IS THE MISSING ENDPOINT FOR THE VISUALIZER
     @GetMapping("/assignments")
     public ResponseEntity<List<AllocatedAssignmentEntity>> getAssignments(@RequestParam Long batchId) {
         return ResponseEntity.ok(allocationService.getAssignmentsByBatchId(batchId));

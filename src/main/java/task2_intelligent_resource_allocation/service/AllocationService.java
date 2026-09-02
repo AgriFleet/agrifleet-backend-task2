@@ -21,7 +21,6 @@ public class AllocationService {
     private final AllocatedAssignmentRepository assignmentRepository;
     private final RestTemplate restTemplate;
 
-    // Core Service URL on Port 8080
     private final String CORE_SERVICE_URL = "http://localhost:8080/api/v1";
 
     public AllocationService(AllocationBatchRepository batchRepository,
@@ -35,7 +34,6 @@ public class AllocationService {
     public AllocationBatchEntity executeHungarianBatch() {
         long startTime = System.nanoTime();
 
-        // 1. Fetch live data from Core Service (Port 8080)
         List<VehicleDTO> vehicles = fetchAvailableVehicles();
         List<BookingDTO> bookings = fetchPendingBookings();
 
@@ -48,7 +46,6 @@ public class AllocationService {
 
         int n = Math.max(numVehicles, numBookings);
 
-        // 2. Build Cost Matrix dynamically using Haversine GPS distances
         double[][] costMatrix = new double[n][n];
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < n; j++) {
@@ -58,18 +55,16 @@ public class AllocationService {
                             bookings.get(j).getFarmLat(), bookings.get(j).getFarmLng()
                     );
                 } else {
-                    costMatrix[i][j] = 99999.0; // Padding for unbalanced matrices
+                    costMatrix[i][j] = 99999.0;
                 }
             }
         }
 
-        // 3. Execute Hungarian Algorithm
         int[] assignments = HungarianAlgorithm.findOptimalAssignments(costMatrix);
 
         long endTime = System.nanoTime();
         double execTimeMs = (endTime - startTime) / 1_000_000.0;
 
-        // 4. Calculate total network cost
         double totalCost = 0.0;
         for (int i = 0; i < assignments.length; i++) {
             int assignedBookingIdx = assignments[i];
@@ -78,7 +73,6 @@ public class AllocationService {
             }
         }
 
-        // 5. Save Batch History
         AllocationBatchEntity batch = new AllocationBatchEntity();
         batch.setBatchType("SCHEDULED_BATCH");
         batch.setMatrixDimensions(numVehicles + "x" + numBookings);
@@ -93,7 +87,6 @@ public class AllocationService {
         batch.setExecutionTimeMs(Math.round(execTimeMs * 100.0) / 100.0);
         batch = batchRepository.save(batch);
 
-        // 6. Save Individual Assignments
         for (int i = 0; i < assignments.length; i++) {
             int assignedBookingIdx = assignments[i];
             if (i < numVehicles && assignedBookingIdx < numBookings) {
